@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# Get all network interfaces
+username="$1"
+password="$2"
+note="$3"
+numproxy="$4"
+numport="$5"
+#read -p "Enter username: " username
+#read -s -p  "Enter password: " password
+#echo "."
+#read -p "So proxy: " numproxy
+#read -p "Do you want to generate a random port between 30000 and 40000? (y/n) " choice
+#case "$choice" in
+#  y|Y )
+#    numport=$((RANDOM%10001+30000))
+#    echo "Random port between 30000 and 40000: $number"
+##    ;;
+#  n|N ) 
+ #   echo "ok let choose by yourself"
+  #  read -p "Port gi: " numport
+  #  ;;
+  #* )
+  #  echo "Invalid choice. No number generated."
+  #  ;;
+#esac
+
+#read -p "Ngayhethan 2023-12-31: " note
+echo "#$note $username" >> /etc/3proxy/.proxyauth
+echo "$note $username" >> /root/scheduled_dates.txt
+# Add the user to htpasswd file
+#echo "$username:CL:$password" >> /etc/3proxy/.proxyauth
+
+# Confirm successful user creation
+echo "User $username has been added to the passwd file."
+interfaces=$(ifconfig | grep -o '^[^ ]*')
+
+# Loop through each interface
+# Initialize the selected_ips array
+selected_ips=()
+user_conf_file="/etc/3proxy/$username.cfg"
+echo "include $user_conf_file" >> /etc/3proxy.cfg
+
+# Loop until 10 different IPv4 addresses are selected
+while [ ${#selected_ips[@]} -lt $numproxy ]
+do
+  # Get a random IPv4 address from the available network interfaces
+  ip=$(/sbin/ip -4 -o addr show scope global | awk '{gsub(/\/.*/,"",$4); print $4}' | shuf -n 1)
+
+  # Check if the IPv4 address is already in the selected_ips array
+  if ! [[ " ${selected_ips[*]} " =~ " ${ip} " ]]; then
+    # Add the IPv4 address to the selected_ips array
+    selected_ips+=($ip)
+  fi
+done
+# Set the path to the user configuration directory
+
+# Loop through the selected IPv4 addresses and create iptables rules
+for ip in "${selected_ips[@]}"
+do
+#  echo "http_port $ip:$numport" >> "$user_conf_file"
+  echo "users $username:CL:$password" >> "$user_conf_file"
+  echo "auth strong" >> "$user_conf_file"
+  echo "allow $username" >> "$user_conf_file"
+  echo "proxy -n -a -p$numport -i$ip -e$ip" >> "$user_conf_file"
+  echo "flush" >> "$user_conf_file"
+  iptables -A INPUT -p tcp --dport $numport -s $ip -j ACCEPT
+  echo "$ip:$numport:$username:$password"
+done
+service 3proxy restart
